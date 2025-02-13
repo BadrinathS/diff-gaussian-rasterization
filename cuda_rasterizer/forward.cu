@@ -273,6 +273,7 @@ renderCUDA(
 	float* __restrict__ out_color)
 {
 	// Identify current tile and associated min/max pixel range.
+	printf("HELLOO********");
 	auto block = cg::this_thread_block();
 	uint32_t horizontal_blocks = (W + BLOCK_X - 1) / BLOCK_X;
 	uint2 pix_min = { block.group_index().x * BLOCK_X, block.group_index().y * BLOCK_Y };
@@ -326,7 +327,7 @@ renderCUDA(
 		{
 			// Keep track of current position in range
 			contributor++;
-
+			
 			// Resample using conic matrix (cf. "Surface 
 			// Splatting" by Zwicker et al., 2001)
 			float2 xy = collected_xy[j];
@@ -352,13 +353,17 @@ renderCUDA(
 
 			// Eq. (3) from 3D Gaussian splatting paper.
 			for (int ch = 0; ch < CHANNELS; ch++)
+				{
+					printf("Collected i  %d", collected_id[j]);
+				
 				C[ch] += features[collected_id[j] * CHANNELS + ch] * alpha * T;
-
+				}
 			T = test_T;
 
 			// Keep track of last range entry to update this
 			// pixel.
 			last_contributor = contributor;
+
 		}
 	}
 
