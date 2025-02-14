@@ -65,6 +65,37 @@ __global__ void checkFrustum(int P,
 	present[idx] = in_frustum(idx, orig_points, viewmatrix, projmatrix, false, p_view);
 }
 
+__global__ void copyIndices(
+	const uint32_t* point_list,
+	long long* indices,
+	int num_rendered)
+{
+	auto idx = cg::this_grid().thread_rank();
+	if (idx >= num_rendered) return;
+
+	indices[idx] = point_list[idx];
+}
+
+__global__ void extractTileAndDepth(
+	const uint64_t* point_list_keys,
+	float* depths,
+	long long* tile_idx,
+	int num_rendered)
+{
+	auto idx = cg::this_grid().thread_rank();
+	if (idx >= num_rendered) return;
+
+	uint64_t key = point_list_keys[idx];
+	long long tile = (key >> 32);
+
+	float depth = 0;
+	uint32_t* depth_ptr = (uint32_t*)&depth;
+	*depth_ptr = (key & 0xFFFFFFFF);
+
+	tile_idx[idx] = tile;
+	depths[idx] = depth;
+}
+
 // Generates one key/value pair for all Gaussian / tile overlaps. 
 // Run once per Gaussian (1:N mapping).
 __global__ void duplicateWithKeys(
@@ -199,6 +230,9 @@ int CudaRasterizer::Rasterizer::forward(
 	std::function<char* (size_t)> geometryBuffer,
 	std::function<char* (size_t)> binningBuffer,
 	std::function<char* (size_t)> imageBuffer,
+	std::function<long long* (size_t)> tileIndices,
+	std::function<long long* (size_t)> gaussIndices,
+	std::function<float* (size_t)> gaussDepths,
 	const int P, int D, int M,
 	const float* background,
 	const int width, int height,
@@ -308,6 +342,22 @@ int CudaRasterizer::Rasterizer::forward(
 		num_rendered, 0, 32 + bit), debug)
 
 	CHECK_CUDA(cudaMemset(imgState.ranges, 0, tile_grid.x * tile_grid.y * sizeof(uint2)), debug);
+	
+	//  Changes to collect sorted gaussians per tile *******************************************************
+	long long* gaussIndicesPtr = gaussIndices(num_rendered);
+	copyIndices << <(num_rendered + 255) / 256, 256 >> > (
+		binningState.point_list, gaussIndicesPtr, num_rendered
+	);
+	CHECK_CUDA(, debug)
+	
+	float* gaussDepthsPtr = gaussDepths(num_rendered);
+	long long* tileIndicesPtr = tileIndices(num_rendered);
+
+	extractTileAndDepth << <(num_rendered + 255) / 256, 256 >> > (
+		binningState.point_list_keys,
+		gaussDepthsPtr, tileIndicesPtr, num_rendered
+	);
+	CHECK_CUDA(, debug)
 
 	// Identify start and end of per-tile workloads in sorted list
 	if (num_rendered > 0)

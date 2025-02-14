@@ -187,7 +187,7 @@ __global__ void preprocessCUDA(int P, int D, int M,
 	// this Gaussian will not be processed further.
 	radii[idx] = 0;
 	tiles_touched[idx] = 0;
-
+	
 	// Perform near culling, quit if outside.
 	float3 p_view;
 	if (!in_frustum(idx, orig_points, viewmatrix, projmatrix, prefiltered, p_view))
@@ -198,7 +198,7 @@ __global__ void preprocessCUDA(int P, int D, int M,
 	float4 p_hom = transformPoint4x4(p_orig, projmatrix);
 	float p_w = 1.0f / (p_hom.w + 0.0000001f);
 	float3 p_proj = { p_hom.x * p_w, p_hom.y * p_w, p_hom.z * p_w };
-
+	// printf("%" , orig_points[idx]);
 	// If 3D covariance matrix is precomputed, use it, otherwise compute
 	// from scaling and rotation parameters. 
 	const float* cov3D;
@@ -250,6 +250,8 @@ __global__ void preprocessCUDA(int P, int D, int M,
 	depths[idx] = p_view.z;
 	radii[idx] = my_radius;
 	points_xy_image[idx] = point_image;
+	
+
 	// Inverse 2D covariance and opacity neatly pack into one float4
 	conic_opacity[idx] = { conic.x, conic.y, conic.z, opacities[idx] };
 	tiles_touched[idx] = (rect_max.y - rect_min.y) * (rect_max.x - rect_min.x);
@@ -273,7 +275,6 @@ renderCUDA(
 	float* __restrict__ out_color)
 {
 	// Identify current tile and associated min/max pixel range.
-	printf("HELLOO********");
 	auto block = cg::this_thread_block();
 	uint32_t horizontal_blocks = (W + BLOCK_X - 1) / BLOCK_X;
 	uint2 pix_min = { block.group_index().x * BLOCK_X, block.group_index().y * BLOCK_Y };
@@ -327,7 +328,7 @@ renderCUDA(
 		{
 			// Keep track of current position in range
 			contributor++;
-			
+
 			// Resample using conic matrix (cf. "Surface 
 			// Splatting" by Zwicker et al., 2001)
 			float2 xy = collected_xy[j];
@@ -353,17 +354,13 @@ renderCUDA(
 
 			// Eq. (3) from 3D Gaussian splatting paper.
 			for (int ch = 0; ch < CHANNELS; ch++)
-				{
-					printf("Collected i  %d", collected_id[j]);
-				
 				C[ch] += features[collected_id[j] * CHANNELS + ch] * alpha * T;
-				}
+
 			T = test_T;
 
 			// Keep track of last range entry to update this
 			// pixel.
 			last_contributor = contributor;
-
 		}
 	}
 

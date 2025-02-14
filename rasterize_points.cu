@@ -24,15 +24,16 @@
 #include <string>
 #include <functional>
 
-std::function<char*(size_t N)> resizeFunctional(torch::Tensor& t) {
+template<typename RetType>
+std::function<RetType*(size_t N)> resizeFunctional(torch::Tensor& t) {
     auto lambda = [&t](size_t N) {
         t.resize_({(long long)N});
-		return reinterpret_cast<char*>(t.contiguous().data_ptr());
+		return reinterpret_cast<RetType*>(t.contiguous().data_ptr());
     };
     return lambda;
 }
 
-std::tuple<int, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
+std::tuple<int, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
 RasterizeGaussiansCUDA(
 	const torch::Tensor& background,
 	const torch::Tensor& means3D,
@@ -73,9 +74,17 @@ RasterizeGaussiansCUDA(
   torch::Tensor geomBuffer = torch::empty({0}, options.device(device));
   torch::Tensor binningBuffer = torch::empty({0}, options.device(device));
   torch::Tensor imgBuffer = torch::empty({0}, options.device(device));
-  std::function<char*(size_t)> geomFunc = resizeFunctional(geomBuffer);
-  std::function<char*(size_t)> binningFunc = resizeFunctional(binningBuffer);
-  std::function<char*(size_t)> imgFunc = resizeFunctional(imgBuffer);
+  torch::Tensor tileIndices = torch::empty({0}, options.device(device).dtype(torch::kInt64));
+  torch::Tensor gaussIndices = torch::empty({0}, options.device(device).dtype(torch::kInt64));
+  torch::Tensor gaussDepths = torch::empty({0}, options.device(device).dtype(torch::kFloat32));
+
+  std::function<char*(size_t)> geomFunc = resizeFunctional<char>(geomBuffer);
+  std::function<char*(size_t)> binningFunc = resizeFunctional<char>(binningBuffer);
+  std::function<char*(size_t)> imgFunc = resizeFunctional<char>(imgBuffer);
+
+  auto gaussDepthFunc = resizeFunctional<float>(gaussDepths);
+  auto gaussIndicesFunc = resizeFunctional<long long>(gaussIndices);
+  auto tileIndicesFunc = resizeFunctional<long long>(tileIndices);
   
   int rendered = 0;
   if(P != 0)
@@ -90,6 +99,9 @@ RasterizeGaussiansCUDA(
 	    geomFunc,
 		binningFunc,
 		imgFunc,
+		tileIndicesFunc,
+		gaussIndicesFunc,
+		gaussDepthFunc,
 	    P, degree, M,
 		background.contiguous().data<float>(),
 		W, H,
@@ -111,7 +123,8 @@ RasterizeGaussiansCUDA(
 		radii.contiguous().data<int>(),
 		debug);
   }
-  return std::make_tuple(rendered, out_color, radii, geomBuffer, binningBuffer, imgBuffer);
+
+  return std::make_tuple(rendered, out_color, radii, geomBuffer, binningBuffer, imgBuffer, tileIndices, gaussIndices, gaussDepths);
 }
 
 std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
