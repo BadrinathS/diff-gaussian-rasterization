@@ -28,6 +28,7 @@ def rasterize_gaussians(
     rotations,
     cov3Ds_precomp,
     raster_settings,
+    gauss_model=None,
 ):
     return _RasterizeGaussians.apply(
         means3D,
@@ -39,6 +40,7 @@ def rasterize_gaussians(
         rotations,
         cov3Ds_precomp,
         raster_settings,
+        gauss_model,
     )
 
 class _RasterizeGaussians(torch.autograd.Function):
@@ -54,6 +56,7 @@ class _RasterizeGaussians(torch.autograd.Function):
         rotations,
         cov3Ds_precomp,
         raster_settings,
+        gauss_model=None
     ):
 
         # Restructure arguments the way that the C++ lib expects them
@@ -97,7 +100,10 @@ class _RasterizeGaussians(torch.autograd.Function):
         ctx.raster_settings = raster_settings
         ctx.num_rendered = num_rendered
         ctx.save_for_backward(colors_precomp, means3D, scales, rotations, cov3Ds_precomp, radii, sh, geomBuffer, binningBuffer, imgBuffer)
-        return color, radii, tileIndices, gaussIndices, gaussDepths
+        gauss_model.tileIndices=tileIndices
+        gauss_model.gaussIndices=gaussIndices
+        gauss_model.gaussDepths=gaussDepths
+        return color, radii#, tileIndices, gaussIndices, gaussDepths
 
     @staticmethod
     def backward(ctx, grad_out_color, _):
@@ -152,6 +158,7 @@ class _RasterizeGaussians(torch.autograd.Function):
             grad_rotations,
             grad_cov3Ds_precomp,
             None,
+            None,
         )
 
         return grads
@@ -186,7 +193,7 @@ class GaussianRasterizer(nn.Module):
             
         return visible
 
-    def forward(self, means3D, means2D, opacities, shs = None, colors_precomp = None, scales = None, rotations = None, cov3D_precomp = None):
+    def forward(self, means3D, means2D, opacities, shs = None, colors_precomp = None, scales = None, rotations = None, cov3D_precomp = None, gauss_model=None):
         
         raster_settings = self.raster_settings
 
@@ -219,5 +226,6 @@ class GaussianRasterizer(nn.Module):
             rotations,
             cov3D_precomp,
             raster_settings, 
+            gauss_model,
         )
 
